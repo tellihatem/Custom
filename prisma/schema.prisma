@@ -1,0 +1,86 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider   = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  name             String?
+  avatarUrl        String?
+  subscriptionTier String    @default("free")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  websites         Website[]
+  assets           Asset[]
+}
+
+model Website {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  slug         String   @unique
+  templateId   String
+  themeConfig  Json     @default("{}")
+  metaData     Json     @default("{}")
+  isPublished  Boolean  @default(false)
+  publishedUrl String?
+  customDomain String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  pages        Page[]
+
+  @@index([userId])
+}
+
+model Page {
+  id        String    @id @default(uuid())
+  websiteId String
+  website   Website   @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  slug      String
+  title     String
+  order     Int       @default(0)
+  seoMeta   Json      @default("{}")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  sections  Section[]
+
+  @@unique([websiteId, slug])
+  @@index([websiteId])
+}
+
+model Section {
+  id        String   @id @default(uuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  type      String
+  order     Int      @default(0)
+  visible   Boolean  @default(true)
+  content   Json     @default("{}")
+  style     Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([pageId])
+}
+
+model Asset {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  filename    String
+  storagePath String
+  publicUrl   String
+  mimeType    String
+  sizeBytes   Int
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
