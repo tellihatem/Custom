@@ -2,16 +2,31 @@
 
 A powerful no-code website builder that allows users to create stunning portfolio websites using customizable templates. Build your professional online presence with drag-and-drop simplicity - no coding required.
 
+---
+
 ## Screenshots
 
-### Sign Up Page
-![Sign Up](public/images/Signup.PNG)
+<h4 align="center">🖥️ Screenshots</h4>
+<table>
+<tr>
+  <td align="center" valign="top" colspan="2">
+    <h5>Editor - Developer Tech Template</h5>
+    <img src="public/images/DesignTemplate.PNG" width="700">
+  </td>
+</tr>
+<tr>
+  <td align="center" valign="top">
+    <h5>Sign Up Page</h5>
+    <img src="public/images/Signup.PNG" width="700">
+  </td>
+  <td align="center" valign="top">
+    <h5>Template Selection</h5>
+    <img src="public/images/SelectTemplate.PNG" width="700">
+  </td>
+</tr>
+</table>
 
-### Template Selection
-![Select Template](public/images/SelectTemplate.PNG)
-
-### Editor - Developer Tech Template
-![Editor](public/images/localhost_3000_editor_new_template=developer-tech%20(5).png)
+---
 
 ## Features
 
@@ -30,6 +45,8 @@ A powerful no-code website builder that allows users to create stunning portfoli
 - **User Authentication** - Secure login with email/password or OAuth (Google, GitHub) via Supabase
 - **Publishing** - Publish your portfolio and share it with the world
 
+---
+
 ## Tech Stack
 
 - **Framework**: Next.js 16 with App Router
@@ -41,6 +58,8 @@ A powerful no-code website builder that allows users to create stunning portfoli
 - **Authentication**: Supabase Auth
 - **Drag & Drop**: @dnd-kit/core and @dnd-kit/sortable
 - **Data Fetching**: TanStack React Query
+
+---
 
 ## Project Structure
 
@@ -68,6 +87,8 @@ src/
 └── middleware.ts           # Auth middleware
 ```
 
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -75,6 +96,8 @@ src/
 - Node.js 18+ 
 - PostgreSQL database
 - Supabase project (for authentication)
+
+---
 
 ### Environment Variables
 
@@ -88,6 +111,8 @@ DATABASE_URL="postgresql://user:password@host:port/database"
 NEXT_PUBLIC_SUPABASE_URL="your-supabase-url"
 NEXT_PUBLIC_SUPABASE_ANON_KEY="your-supabase-anon-key"
 ```
+
+---
 
 ### Installation
 
@@ -125,6 +150,8 @@ npm run dev
 4. Enter a name for your website
 5. Start editing in the visual editor
 
+---
+
 ### Editing Your Website
 
 - **Edit Text**: Click on any text element to edit it inline
@@ -134,10 +161,14 @@ npm run dev
 - **Add Sections**: Add new sections like Hero, About, Projects, Skills, Experience, or Contact
 - **Preview**: Toggle between desktop, tablet, and mobile preview modes
 
+---
+
 ### Publishing
 
 - Click the "Publish" button in the editor toolbar to make your website live
 - Share your published URL with the world
+
+---
 
 ## Available Scripts
 
@@ -145,6 +176,8 @@ npm run dev
 - `npm run build` - Build for production
 - `npm run start` - Start production server
 - `npm run lint` - Run ESLint
+
+---
 
 ## Database Schema
 
@@ -156,6 +189,8 @@ The application uses the following main models:
 - **Section** - Content sections within pages (Hero, About, Projects, etc.)
 - **Asset** - User-uploaded images and files
 
+---
+
 ## API Routes
 
 - `GET/POST /api/websites` - List and create websites
@@ -163,13 +198,19 @@ The application uses the following main models:
 - `GET/POST /api/pages` - Manage pages
 - `GET/PUT/DELETE /api/sections/[id]` - Manage sections
 
+---
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+---
+
 ## License
 
 This project is private and proprietary.
+
+---
 
 ## Support
 
