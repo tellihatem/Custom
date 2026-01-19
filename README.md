@@ -4,9 +4,8 @@ A powerful no-code website builder that allows users to create stunning portfoli
 
 ---
 
-## Screenshots
+## 🖼️ Screenshots
 
-<h4 align="center">🖥️ Screenshots</h4>
 <table>
 <tr>
   <td align="center" valign="top" colspan="2">
