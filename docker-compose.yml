@@ -1,0 +1,56 @@
+# Production-like stack: Postgres + one-shot migrations + the app.
+#   cp .env.example .env && docker compose up -d --build
+#   → http://localhost:3000
+
+x-db-url: &db-url postgresql://${POSTGRES_USER:-thodz}:${POSTGRES_PASSWORD:-thodz}@db:5432/${POSTGRES_DB:-thodz}
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-thodz}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-thodz}
+      POSTGRES_DB: ${POSTGRES_DB:-thodz}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      target: migrator
+    environment:
+      DATABASE_URL: *db-url
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+    image: thodz-builder:latest
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: *db-url
+      DATABASE_SSL: disable
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  db-data:
