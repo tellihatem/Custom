@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server';
 import { storage } from '@/lib/storage';
 import { IMAGE_TYPES, type ImageExtension } from '@/lib/storage/image-type';
-import { errorResponse } from '@/lib/api-helpers';
 
 type RouteParams = { params: Promise<{ key: string[] }> };
 
 // <userId>/<uuid>.<ext> — anything else (e.g. "..") is rejected outright.
+const notFound = () => Response.json({ error: 'Not found' }, { status: 404 });
+
 const KEY_PATTERN = /^[A-Za-z0-9_-]+\/[0-9a-f-]{36}\.(png|jpg|gif|webp)$/;
 
 /**
@@ -16,12 +17,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const key = (await params).key.join('/');
     const match = KEY_PATTERN.exec(key);
     if (!match) {
-        return errorResponse('Not found', 404);
+        return notFound();
     }
 
     const data = await storage.get(key);
     if (!data) {
-        return errorResponse('Not found', 404);
+        return notFound();
     }
 
     return new Response(new Uint8Array(data), {

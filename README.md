@@ -202,14 +202,19 @@ The application uses the following main models:
 
 ## API Routes
 
+All routes except auth, files and health require a session. Request bodies are validated with zod (`src/shared/schemas`). Errors are returned as `{ error, details? }`.
+
 - `GET/POST /api/websites` - List and create websites
-- `GET/PUT/DELETE /api/websites/[id]` - Manage individual websites
-- `GET/POST /api/pages` - Manage pages
-- `GET/PUT/DELETE /api/sections/[id]` - Manage sections
+- `GET/PUT/DELETE /api/websites/[id]` - Manage a website's settings
+- `PUT /api/websites/[id]/draft` - Save the editor state (pages and sections) in one transaction. Send the `version` you loaded. If someone else saved in the meantime, you get `409`.
+- `PUT /api/pages/[id]` - Update a page's title or slug
+- `POST /api/sections`, `GET/PUT/DELETE/PATCH /api/sections/[id]` - Manage a single section (`PATCH` reorders it)
 - `POST /api/assets` - Upload an image (PNG, JPEG, GIF, WebP; max 10MB)
 - `GET /api/files/[...key]` - Serve an uploaded image
 - `/api/auth/*` - Better Auth endpoints (sign-up, sign-in, OAuth callbacks, sign-out)
 - `GET /api/health` - Health check
+
+Server code lives in `src/server/`. `http.ts` provides the `withAuth` wrapper, body parsing and error mapping. `services/` holds the business logic, and every query is scoped to the current user.
 
 ---
 

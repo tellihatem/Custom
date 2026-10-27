@@ -6,7 +6,7 @@ const PROTECTED_PATHS = ['/dashboard', '/editor', '/templates', '/settings'];
 /**
  * Optimistic redirect based on the presence of the session cookie only —
  * no DB lookup at the edge. Real session validation happens server-side in
- * API routes (`requireAuth`), so a forged cookie gets no data.
+ * API routes (`withAuth`), so a forged cookie gets no data.
  *
  * Redirecting signed-in users away from /login is done by the auth pages
  * with a real session check; doing it here on a stale cookie would loop.
