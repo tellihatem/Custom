@@ -90,54 +90,59 @@ src/
 
 ## Getting Started
 
-### Prerequisites
+### Option 1: Docker (recommended)
 
-- Node.js 18+ 
-- PostgreSQL database
-- Supabase project (for authentication)
+The only thing you need installed is [Docker](https://docs.docker.com/get-docker/) with Compose v2.
+
+```bash
+cp .env.example .env        # add your Supabase keys
+docker compose up -d --build
+```
+
+Open [http://localhost:3000](http://localhost:3000). This starts Postgres and applies the database migrations. Then the app starts.
+
+Useful commands:
+
+```bash
+docker compose logs -f app            # follow app logs
+docker compose down                   # stop (data is kept in the db-data volume)
+docker compose down -v                # stop and delete all data
+```
+
+**Development with hot reload** (Node isn't needed on the host either):
+
+```bash
+docker compose -f docker-compose.dev.yml up
+```
+
+---
+
+### Option 2: Local Node.js
+
+Prerequisites: Node.js 20+, a PostgreSQL database, and a Supabase project (for authentication).
+
+```bash
+cp .env.example .env        # set DATABASE_URL, DATABASE_SSL and Supabase keys
+npm install
+npx prisma generate
+npx prisma migrate deploy
+npm run dev
+```
 
 ---
 
 ### Environment Variables
 
-Create a `.env` file in the root directory with the following variables:
+See [`.env.example`](.env.example) for every variable and what it does.
 
-```env
-# Database
-DATABASE_URL="postgresql://user:password@host:port/database"
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | Postgres connection string (set automatically in Docker) |
+| `DATABASE_SSL` | `disable` (local/Docker), `require` (hosted, default), or `verify-full` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (applied at build time) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (applied at build time) |
 
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL="your-supabase-url"
-NEXT_PUBLIC_SUPABASE_ANON_KEY="your-supabase-anon-key"
-```
-
----
-
-### Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd thodz-builder
-```
-
-2. Install dependencies:
-```bash
-npm install
-```
-
-3. Set up the database:
-```bash
-npx prisma generate
-npx prisma db push
-```
-
-4. Run the development server:
-```bash
-npm run dev
-```
-
-5. Open [http://localhost:3000](http://localhost:3000) in your browser.
+A health endpoint at `GET /api/health` returns `200` when the app can reach the database.
 
 ---
 

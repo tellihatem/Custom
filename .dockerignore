@@ -1,0 +1,17 @@
+.git
+.github
+node_modules
+.next
+out
+build
+coverage
+*.tsbuildinfo
+next-env.d.ts
+.env*
+!.env.example
+Dockerfile
+docker-compose*.yml
+.dockerignore
+*.md
+error.md
+temp_error.log

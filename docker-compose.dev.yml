@@ -1,0 +1,50 @@
+# Development stack with hot reload — no Node or Postgres needed on the host.
+#   docker compose -f docker-compose.dev.yml up
+#   → http://localhost:3000  (Postgres exposed on localhost:5432)
+
+x-db-url: &db-url postgresql://thodz:thodz@db:5432/thodz
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: thodz
+      POSTGRES_PASSWORD: thodz
+      POSTGRES_DB: thodz
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U thodz -d thodz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      target: base
+    working_dir: /app
+    command: sh -c "npm install --no-audit --no-fund && npx prisma generate && npx prisma migrate deploy && npm run dev -- -H 0.0.0.0"
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: *db-url
+      DATABASE_SSL: disable
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - next-cache:/app/.next
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data-dev:
+  node_modules:
+  next-cache:

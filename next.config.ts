@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
-// Trigger restart
-
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Self-contained server bundle for the Docker image (.next/standalone)
+  output: "standalone",
 };
 
 export default nextConfig;
