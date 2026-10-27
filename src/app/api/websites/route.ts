@@ -24,9 +24,9 @@ export async function GET() {
         });
 
         return jsonResponse(websites);
-    } catch (err: any) {
+    } catch (err) {
         console.error('Error fetching websites:', err);
-        return errorResponse(`Failed to fetch websites: ${err.message}`, 500);
+        return errorResponse('Failed to fetch websites', 500);
     }
 }
 

@@ -5,6 +5,8 @@ import { requireAuth, jsonResponse, errorResponse } from '@/lib/api-helpers';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
+class SectionNotFoundError extends Error {}
+
 /**
  * PUT /api/pages/[id]
  * Update a page's metadata and atomic save of sections (auto-save)
@@ -59,9 +61,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
                 for (const section of sections) {
                     if (section.id && !section.id.startsWith('temp-')) {
-                        // Update existing
-                        await tx.section.update({
-                            where: { id: section.id },
+                        // Update existing — scoped to this page so a caller can't
+                        // overwrite sections belonging to another page/user.
+                        const { count } = await tx.section.updateMany({
+                            where: { id: section.id, pageId: id },
                             data: {
                                 content: section.content as any,
                                 style: (section.style || {}) as any,
@@ -70,6 +73,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
                                 type: section.type // usually constant, but safe to include
                             }
                         });
+                        if (count === 0) throw new SectionNotFoundError();
                     } else {
                         // Create new (if we want to support creation via save)
                         // For now, let's assume the frontend creates sections via the specific endpoint first
@@ -94,6 +98,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
         return jsonResponse(updatedPage);
     } catch (err) {
+        if (err instanceof SectionNotFoundError) {
+            return errorResponse('Section not found', 404);
+        }
         console.error('Error updating page:', err);
         return errorResponse('Failed to update page', 500);
     }
