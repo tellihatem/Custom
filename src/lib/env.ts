@@ -37,11 +37,16 @@ export function assertEnv() {
         errors.push((err as Error).message);
     }
 
+    const authSecret = process.env.BETTER_AUTH_SECRET;
+    if (process.env.NODE_ENV === 'production' && (!authSecret || authSecret.length < 32)) {
+        errors.push('BETTER_AUTH_SECRET must be set to at least 32 characters (e.g. `openssl rand -base64 32`)');
+    }
+
     if (errors.length > 0) {
         throw new Error(`Invalid environment configuration:\n  - ${errors.join('\n  - ')}`);
     }
 
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-        console.warn('⚠️ NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY not set - authentication will not work');
+    if (!process.env.BETTER_AUTH_URL) {
+        console.warn('⚠️ BETTER_AUTH_URL not set - auth will infer the base URL from each request');
     }
 }

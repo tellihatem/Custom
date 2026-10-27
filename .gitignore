@@ -46,3 +46,6 @@ next-env.d.ts
 # project specific
 error.md
 temp_error.log
+
+# local uploads / runtime data
+/data

@@ -1,4 +1,6 @@
 import { SignupForm } from '@/components/auth/SignupForm';
+import { enabledSocialProviders } from '@/lib/auth';
+import { redirectIfSignedIn } from '../redirect-if-signed-in';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -6,7 +8,9 @@ export const metadata: Metadata = {
     description: 'Create your free THODZ account and start building your professional portfolio today.',
 };
 
-export default function SignupPage() {
+export default async function SignupPage() {
+    await redirectIfSignedIn();
+
     return (
         <div>
             <div className="mb-8">
@@ -18,7 +22,7 @@ export default function SignupPage() {
                 </p>
             </div>
 
-            <SignupForm />
+            <SignupForm socialProviders={enabledSocialProviders} />
         </div>
     );
 }
