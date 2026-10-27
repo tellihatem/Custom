@@ -1,7 +1,7 @@
-import Link from 'next/link';
-import { Button, Card, CardContent } from '@/components/ui';
+import { Card, CardContent } from '@/components/ui';
 import { templates } from '@/lib/templates/config';
-import { ArrowRight, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { UseTemplateButton } from '@/components/dashboard/UseTemplateButton';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -51,12 +51,9 @@ export default function TemplatesPage() {
 
                             {/* Hover Overlay */}
                             <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <Link href={`/editor/new?template=${template.id}`}>
-                                    <Button size="lg" className="gap-2">
-                                        Use This Template
-                                        <ArrowRight className="w-4 h-4" />
-                                    </Button>
-                                </Link>
+                                <UseTemplateButton templateId={template.id} size="lg" className="gap-2">
+                                    Use This Template
+                                </UseTemplateButton>
                             </div>
                         </div>
 
@@ -87,12 +84,9 @@ export default function TemplatesPage() {
                             </div>
 
                             <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
-                                <Link href={`/editor/new?template=${template.id}`}>
-                                    <Button variant="outline" className="w-full gap-2">
-                                        Select Template
-                                        <ArrowRight className="w-4 h-4" />
-                                    </Button>
-                                </Link>
+                                <UseTemplateButton templateId={template.id} variant="outline" className="w-full gap-2">
+                                    Select Template
+                                </UseTemplateButton>
                             </div>
                         </CardContent>
                     </Card>

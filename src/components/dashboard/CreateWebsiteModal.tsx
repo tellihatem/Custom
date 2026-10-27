@@ -13,12 +13,14 @@ import { Loader2, Check } from 'lucide-react';
 interface CreateWebsiteModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    /** Skip template selection and go straight to naming. */
+    initialTemplateId?: string;
 }
 
-export function CreateWebsiteModal({ open, onOpenChange }: CreateWebsiteModalProps) {
+export function CreateWebsiteModal({ open, onOpenChange, initialTemplateId }: CreateWebsiteModalProps) {
     const router = useRouter();
-    const [step, setStep] = useState<1 | 2>(1);
-    const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+    const [step, setStep] = useState<1 | 2>(initialTemplateId ? 2 : 1);
+    const [selectedTemplateId, setSelectedTemplateId] = useState<string>(initialTemplateId ?? '');
     const [name, setName] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -43,7 +45,8 @@ export function CreateWebsiteModal({ open, onOpenChange }: CreateWebsiteModalPro
             });
 
             if (!res.ok) {
-                throw new Error('Failed to create website');
+                const body = await res.json().catch(() => null);
+                throw new Error(body?.error ?? 'Something went wrong. Please try again.');
             }
 
             const website = await res.json();
@@ -54,7 +57,7 @@ export function CreateWebsiteModal({ open, onOpenChange }: CreateWebsiteModalPro
             router.refresh();
         } catch (err) {
             console.error('Error creating website:', err);
-            setError('Something went wrong. Please try again.');
+            setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
         } finally {
             setIsLoading(false);
         }
@@ -70,8 +73,8 @@ export function CreateWebsiteModal({ open, onOpenChange }: CreateWebsiteModalPro
     };
 
     const reset = () => {
-        setStep(1);
-        setSelectedTemplateId('');
+        setStep(initialTemplateId ? 2 : 1);
+        setSelectedTemplateId(initialTemplateId ?? '');
         setName('');
         setError(null);
         onOpenChange(false);

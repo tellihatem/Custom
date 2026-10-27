@@ -1,29 +1,51 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import type { Website, Page, Section, ThemeConfig } from '@/lib/types';
+import type { SaveDraftInput } from '@/shared/schemas/draft';
+import { newId } from '@/lib/utils';
+
+export type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'error' | 'conflict';
+
+/** The part of the state that undo/redo restores. */
+interface Snapshot {
+    website: Website;
+    currentPage: Page;
+}
+
+const HISTORY_LIMIT = 50;
+/** Edits with the same key within this window form one undo step (typing). */
+const HISTORY_COALESCE_MS = 1000;
 
 interface EditorStore {
-    // State
+    // Document
     website: Website | null;
     currentPage: Page | null;
+
+    // UI
     selectedSectionId: string | null;
     isEditing: boolean;
-    isSaving: boolean;
-    hasUnsavedChanges: boolean;
     devicePreview: 'desktop' | 'tablet' | 'mobile';
     showStylePanel: boolean;
     showSectionPanel: boolean;
 
-    // History for undo/redo
-    history: Website[];
-    historyIndex: number;
+    // Persistence
+    saveStatus: SaveStatus;
+    /** Incremented on every edit; lets a save know if edits happened meanwhile. */
+    changeCounter: number;
 
-    // Actions
-    setWebsite: (website: Website | null) => void;
-    setCurrentPage: (page: Page | null) => void;
+    // History
+    past: Snapshot[];
+    future: Snapshot[];
+    lastHistoryKey: string | null;
+    lastHistoryAt: number;
+
+    // Lifecycle
+    load: (website: Website) => void;
+    reset: () => void;
+
+    // UI actions
     selectSection: (sectionId: string | null) => void;
     setEditing: (isEditing: boolean) => void;
-    setSaving: (isSaving: boolean) => void;
     setDevicePreview: (device: 'desktop' | 'tablet' | 'mobile') => void;
     toggleStylePanel: () => void;
     toggleSectionPanel: () => void;
@@ -44,276 +66,261 @@ interface EditorStore {
     // History actions
     undo: () => void;
     redo: () => void;
-    saveToHistory: () => void;
 
-    // Reset
-    reset: () => void;
-    markAsSaved: () => void;
+    // Save lifecycle (used by AutoSaveManager)
+    beginSave: () => { payload: SaveDraftInput; changeCounter: number } | null;
+    saveSucceeded: (version: number, savedChangeCounter: number) => void;
+    saveFailed: (conflict: boolean) => void;
 }
 
-const initialState = {
+const initialDocumentState = {
     website: null,
     currentPage: null,
     selectedSectionId: null,
     isEditing: false,
-    isSaving: false,
-    hasUnsavedChanges: false,
-    devicePreview: 'desktop' as const,
-    showStylePanel: false,
-    showSectionPanel: true,
-    history: [],
-    historyIndex: -1,
+    saveStatus: 'saved' as SaveStatus,
+    changeCounter: 0,
+    past: [] as Snapshot[],
+    future: [] as Snapshot[],
+    lastHistoryKey: null,
+    lastHistoryAt: 0,
 };
+
+const renumber = (sections: Section[]) => sections.map((s, i) => ({ ...s, order: i }));
 
 export const useEditorStore = create<EditorStore>()(
     devtools(
         persist(
-            (set, get) => ({
-                ...initialState,
-
-                setWebsite: (website) =>
-                    set({ website, hasUnsavedChanges: false }, false, 'setWebsite'),
-
-                setCurrentPage: (currentPage) =>
-                    set({ currentPage }, false, 'setCurrentPage'),
-
-                selectSection: (selectedSectionId) =>
-                    set({ selectedSectionId }, false, 'selectSection'),
-
-                setEditing: (isEditing) =>
-                    set({ isEditing }, false, 'setEditing'),
-
-                setSaving: (isSaving) =>
-                    set({ isSaving }, false, 'setSaving'),
-
-                setDevicePreview: (devicePreview) =>
-                    set({ devicePreview }, false, 'setDevicePreview'),
-
-                toggleStylePanel: () =>
-                    set((state) => ({ showStylePanel: !state.showStylePanel }), false, 'toggleStylePanel'),
-
-                toggleSectionPanel: () =>
-                    set((state) => ({ showSectionPanel: !state.showSectionPanel }), false, 'toggleSectionPanel'),
-
-                updateWebsiteName: (name) =>
-                    set(
-                        (state) => ({
-                            website: state.website ? { ...state.website, name } : null,
-                            hasUnsavedChanges: true,
-                        }),
-                        false,
-                        'updateWebsiteName'
-                    ),
-
-                updateTheme: (theme) =>
+            (set, get) => {
+                /**
+                 * Apply an edit to the document: records an undo snapshot
+                 * (coalescing rapid edits with the same key), clears redo,
+                 * and marks the document dirty.
+                 */
+                const mutate = (
+                    key: string,
+                    recipe: (doc: Snapshot) => Partial<Snapshot> | null
+                ) =>
                     set(
                         (state) => {
-                            if (!state.website) return state;
+                            if (!state.website || !state.currentPage) return state;
+                            const doc = { website: state.website, currentPage: state.currentPage };
+                            const changes = recipe(doc);
+                            if (!changes) return state;
+
+                            const now = Date.now();
+                            const coalesce =
+                                key === state.lastHistoryKey && now - state.lastHistoryAt < HISTORY_COALESCE_MS;
+
                             return {
-                                website: {
-                                    ...state.website,
-                                    themeConfig: { ...state.website.themeConfig, ...theme },
-                                },
-                                hasUnsavedChanges: true,
+                                ...changes,
+                                past: coalesce ? state.past : [...state.past, doc].slice(-HISTORY_LIMIT),
+                                future: [],
+                                lastHistoryKey: key,
+                                lastHistoryAt: now,
+                                changeCounter: state.changeCounter + 1,
+                                saveStatus: state.saveStatus === 'conflict' ? 'conflict' : 'unsaved',
                             };
                         },
                         false,
-                        'updateTheme'
-                    ),
+                        key.split(':')[0]
+                    );
 
-                updateSection: (sectionId, updates) =>
+                const mapSections = (
+                    page: Page,
+                    fn: (sections: Section[]) => Section[]
+                ): Partial<Snapshot> => ({
+                    currentPage: { ...page, sections: fn(page.sections ?? []) },
+                });
+
+                /** Restore a snapshot from one history stack onto the other. */
+                const travel = (from: 'past' | 'future') =>
                     set(
                         (state) => {
-                            if (!state.currentPage?.sections) return state;
-                            const sections = state.currentPage.sections.map((section) =>
-                                section.id === sectionId ? { ...section, ...updates } : section
-                            );
+                            const stack = state[from];
+                            if (stack.length === 0 || !state.website || !state.currentPage) return state;
+                            const target = stack[stack.length - 1];
+                            const current = { website: state.website, currentPage: state.currentPage };
                             return {
-                                currentPage: { ...state.currentPage, sections },
-                                hasUnsavedChanges: true,
+                                ...target,
+                                // Keep the server version: it is not part of the undoable content.
+                                website: { ...target.website, version: state.website.version },
+                                past: from === 'past' ? state.past.slice(0, -1) : [...state.past, current],
+                                future: from === 'future' ? state.future.slice(0, -1) : [...state.future, current],
+                                lastHistoryKey: null,
+                                changeCounter: state.changeCounter + 1,
+                                saveStatus: state.saveStatus === 'conflict' ? 'conflict' : 'unsaved',
                             };
                         },
                         false,
-                        'updateSection'
-                    ),
+                        from === 'past' ? 'undo' : 'redo'
+                    );
 
-                updateSectionContent: (sectionId, content) =>
-                    set(
-                        (state) => {
-                            if (!state.currentPage?.sections) return state;
-                            const sections = state.currentPage.sections.map((section) =>
-                                section.id === sectionId
-                                    ? { ...section, content: { ...section.content, ...content } }
-                                    : section
-                            );
-                            return {
-                                currentPage: { ...state.currentPage, sections },
-                                hasUnsavedChanges: true,
-                            };
-                        },
-                        false,
-                        'updateSectionContent'
-                    ),
+                return {
+                    ...initialDocumentState,
+                    devicePreview: 'desktop',
+                    showStylePanel: false,
+                    showSectionPanel: true,
 
-                updateSectionStyle: (sectionId, style) =>
-                    set(
-                        (state) => {
-                            if (!state.currentPage?.sections) return state;
-                            const sections = state.currentPage.sections.map((section) =>
-                                section.id === sectionId
-                                    ? { ...section, style: { ...section.style, ...style } }
-                                    : section
-                            );
-                            return {
-                                currentPage: { ...state.currentPage, sections },
-                                hasUnsavedChanges: true,
-                            };
-                        },
-                        false,
-                        'updateSectionStyle'
-                    ),
+                    load: (website) =>
+                        set(
+                            {
+                                ...initialDocumentState,
+                                website,
+                                // The editor UI currently edits a single page.
+                                currentPage: website.pages?.[0] ?? null,
+                                isEditing: true,
+                            },
+                            false,
+                            'load'
+                        ),
 
-                reorderSections: (sectionIds) =>
-                    set(
-                        (state) => {
-                            if (!state.currentPage?.sections) return state;
-                            const sectionMap = new Map(
-                                state.currentPage.sections.map((s) => [s.id, s])
-                            );
-                            const sections = sectionIds
-                                .map((id, index) => {
-                                    const section = sectionMap.get(id);
-                                    return section ? { ...section, order: index } : null;
-                                })
-                                .filter((s): s is Section => s !== null);
-                            return {
-                                currentPage: { ...state.currentPage, sections },
-                                hasUnsavedChanges: true,
-                            };
-                        },
-                        false,
-                        'reorderSections'
-                    ),
+                    reset: () => set(initialDocumentState, false, 'reset'),
 
-                toggleSectionVisibility: (sectionId) =>
-                    set(
-                        (state) => {
-                            if (!state.currentPage?.sections) return state;
-                            const sections = state.currentPage.sections.map((section) =>
-                                section.id === sectionId
-                                    ? { ...section, visible: !section.visible }
-                                    : section
-                            );
-                            return {
-                                currentPage: { ...state.currentPage, sections },
-                                hasUnsavedChanges: true,
-                            };
-                        },
-                        false,
-                        'toggleSectionVisibility'
-                    ),
+                    selectSection: (selectedSectionId) =>
+                        set({ selectedSectionId }, false, 'selectSection'),
 
-                addSection: (type, afterSectionId) =>
-                    set(
-                        (state) => {
-                            if (!state.currentPage?.sections) return state;
-                            const newSection: Section = {
-                                id: `section-${Date.now()}`,
-                                pageId: state.currentPage.id,
-                                type,
-                                order: state.currentPage.sections.length,
-                                visible: true,
-                                content: getDefaultContent(type),
-                                style: {},
-                            };
+                    setEditing: (isEditing) => set({ isEditing }, false, 'setEditing'),
 
-                            let sections = [...state.currentPage.sections];
-                            if (afterSectionId) {
-                                const index = sections.findIndex((s) => s.id === afterSectionId);
-                                sections.splice(index + 1, 0, newSection);
-                                // Reorder
-                                sections = sections.map((s, i) => ({ ...s, order: i }));
-                            } else {
-                                sections.push(newSection);
-                            }
+                    setDevicePreview: (devicePreview) =>
+                        set({ devicePreview }, false, 'setDevicePreview'),
 
-                            return {
-                                currentPage: { ...state.currentPage, sections },
-                                hasUnsavedChanges: true,
-                            };
-                        },
-                        false,
-                        'addSection'
-                    ),
+                    toggleStylePanel: () =>
+                        set((state) => ({ showStylePanel: !state.showStylePanel }), false, 'toggleStylePanel'),
 
-                deleteSection: (sectionId) =>
-                    set(
-                        (state) => {
-                            if (!state.currentPage?.sections) return state;
-                            const sections = state.currentPage.sections
-                                .filter((s) => s.id !== sectionId)
-                                .map((s, i) => ({ ...s, order: i }));
-                            return {
-                                currentPage: { ...state.currentPage, sections },
-                                selectedSectionId:
-                                    state.selectedSectionId === sectionId
-                                        ? null
-                                        : state.selectedSectionId,
-                                hasUnsavedChanges: true,
-                            };
-                        },
-                        false,
-                        'deleteSection'
-                    ),
+                    toggleSectionPanel: () =>
+                        set((state) => ({ showSectionPanel: !state.showSectionPanel }), false, 'toggleSectionPanel'),
 
-                saveToHistory: () =>
-                    set(
-                        (state) => {
-                            if (!state.website) return state;
-                            const newHistory = state.history.slice(0, state.historyIndex + 1);
-                            newHistory.push(JSON.parse(JSON.stringify(state.website)));
-                            return {
-                                history: newHistory.slice(-50), // Keep last 50 states
-                                historyIndex: newHistory.length - 1,
-                            };
-                        },
-                        false,
-                        'saveToHistory'
-                    ),
+                    updateWebsiteName: (name) =>
+                        mutate('updateWebsiteName', ({ website }) => ({ website: { ...website, name } })),
 
-                undo: () =>
-                    set(
-                        (state) => {
-                            if (state.historyIndex <= 0) return state;
-                            const newIndex = state.historyIndex - 1;
-                            return {
-                                website: JSON.parse(JSON.stringify(state.history[newIndex])),
-                                historyIndex: newIndex,
-                                hasUnsavedChanges: true,
-                            };
-                        },
-                        false,
-                        'undo'
-                    ),
+                    updateTheme: (theme) =>
+                        mutate(`updateTheme:${Object.keys(theme).join(',')}`, ({ website }) => ({
+                            website: { ...website, themeConfig: { ...website.themeConfig, ...theme } },
+                        })),
 
-                redo: () =>
-                    set(
-                        (state) => {
-                            if (state.historyIndex >= state.history.length - 1) return state;
-                            const newIndex = state.historyIndex + 1;
-                            return {
-                                website: JSON.parse(JSON.stringify(state.history[newIndex])),
-                                historyIndex: newIndex,
-                                hasUnsavedChanges: true,
-                            };
-                        },
-                        false,
-                        'redo'
-                    ),
+                    updateSection: (sectionId, updates) =>
+                        mutate(`updateSection:${sectionId}`, ({ currentPage }) =>
+                            mapSections(currentPage, (sections) =>
+                                sections.map((s) => (s.id === sectionId ? { ...s, ...updates } : s))
+                            )
+                        ),
 
-                reset: () => set(initialState, false, 'reset'),
-                markAsSaved: () => set({ hasUnsavedChanges: false }, false, 'markAsSaved'),
-            }),
+                    updateSectionContent: (sectionId, content) =>
+                        mutate(`updateSectionContent:${sectionId}:${Object.keys(content).join(',')}`, ({ currentPage }) =>
+                            mapSections(currentPage, (sections) =>
+                                sections.map((s) =>
+                                    s.id === sectionId ? { ...s, content: { ...s.content, ...content } } : s
+                                )
+                            )
+                        ),
+
+                    updateSectionStyle: (sectionId, style) =>
+                        mutate(`updateSectionStyle:${sectionId}:${Object.keys(style).join(',')}`, ({ currentPage }) =>
+                            mapSections(currentPage, (sections) =>
+                                sections.map((s) =>
+                                    s.id === sectionId ? { ...s, style: { ...s.style, ...style } } : s
+                                )
+                            )
+                        ),
+
+                    reorderSections: (sectionIds) =>
+                        mutate(`reorderSections:${Date.now()}`, ({ currentPage }) =>
+                            mapSections(currentPage, (sections) => {
+                                const byId = new Map(sections.map((s) => [s.id, s]));
+                                return renumber(
+                                    sectionIds
+                                        .map((id) => byId.get(id))
+                                        .filter((s): s is Section => s !== undefined)
+                                );
+                            })
+                        ),
+
+                    toggleSectionVisibility: (sectionId) =>
+                        mutate(`toggleSectionVisibility:${Date.now()}`, ({ currentPage }) =>
+                            mapSections(currentPage, (sections) =>
+                                sections.map((s) => (s.id === sectionId ? { ...s, visible: !s.visible } : s))
+                            )
+                        ),
+
+                    addSection: (type, afterSectionId) =>
+                        mutate(`addSection:${Date.now()}`, ({ currentPage }) =>
+                            mapSections(currentPage, (sections) => {
+                                const newSection: Section = {
+                                    // Real UUID: the draft endpoint creates it with this id.
+                                    id: newId(),
+                                    pageId: currentPage.id,
+                                    type,
+                                    order: sections.length,
+                                    visible: true,
+                                    content: getDefaultContent(type),
+                                    style: {},
+                                };
+                                const index = afterSectionId
+                                    ? sections.findIndex((s) => s.id === afterSectionId) + 1
+                                    : sections.length;
+                                const next = [...sections];
+                                next.splice(index > 0 ? index : sections.length, 0, newSection);
+                                return renumber(next);
+                            })
+                        ),
+
+                    deleteSection: (sectionId) => {
+                        mutate(`deleteSection:${Date.now()}`, ({ currentPage }) =>
+                            mapSections(currentPage, (sections) =>
+                                renumber(sections.filter((s) => s.id !== sectionId))
+                            )
+                        );
+                        if (get().selectedSectionId === sectionId) {
+                            set({ selectedSectionId: null }, false, 'deleteSection');
+                        }
+                    },
+
+                    undo: () => travel('past'),
+                    redo: () => travel('future'),
+
+                    beginSave: () => {
+                        const { website, currentPage, changeCounter, saveStatus } = get();
+                        if (!website || !currentPage || saveStatus === 'conflict') return null;
+                        set({ saveStatus: 'saving' }, false, 'beginSave');
+                        return {
+                            changeCounter,
+                            payload: {
+                                version: website.version,
+                                name: website.name,
+                                themeConfig: { ...website.themeConfig },
+                                pages: [
+                                    {
+                                        id: currentPage.id,
+                                        sections: (currentPage.sections ?? []).map((s) => ({
+                                            id: s.id,
+                                            type: s.type,
+                                            order: s.order,
+                                            visible: s.visible,
+                                            content: { ...s.content },
+                                            style: { ...s.style },
+                                        })),
+                                    },
+                                ],
+                            },
+                        };
+                    },
+
+                    saveSucceeded: (version, savedChangeCounter) =>
+                        set(
+                            (state) => ({
+                                website: state.website ? { ...state.website, version } : null,
+                                // Edits made while the request was in flight still need saving.
+                                saveStatus: state.changeCounter === savedChangeCounter ? 'saved' : 'unsaved',
+                            }),
+                            false,
+                            'saveSucceeded'
+                        ),
+
+                    saveFailed: (conflict) =>
+                        set({ saveStatus: conflict ? 'conflict' : 'error' }, false, 'saveFailed'),
+                };
+            },
             {
                 name: 'thodz-editor-store',
                 partialize: (state) => ({

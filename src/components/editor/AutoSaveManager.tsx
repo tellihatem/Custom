@@ -1,106 +1,105 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useEditorStore } from '@/lib/store/editorStore';
 
-const AUTO_SAVE_DELAY = 2000; // 2 seconds
+const AUTO_SAVE_DELAY = 1500;
+const MIN_RETRY_DELAY = 2000;
+const MAX_RETRY_DELAY = 30_000;
 
+/**
+ * Headless component that persists the editor state through
+ * PUT /api/websites/:id/draft:
+ * - debounces edits, and re-saves if edits happen while a save is in flight
+ * - retries network/5xx failures with exponential backoff
+ * - stops on 409 (the website was saved from another tab) until reload
+ * - warns before closing the tab with unsaved changes
+ */
 export function AutoSaveManager() {
-    const {
-        website,
-        currentPage,
-        hasUnsavedChanges,
-        setSaving,
-        updateWebsiteName,
-        markAsSaved,
-    } = useEditorStore();
+    const changeCounter = useEditorStore((s) => s.changeCounter);
+    const saveStatus = useEditorStore((s) => s.saveStatus);
 
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const inFlight = useRef(false);
+    const pending = useRef(false);
+    const retryDelay = useRef(MIN_RETRY_DELAY);
+    const retryable = useRef(true);
 
-    const saveChanges = useCallback(async () => {
-        if (!currentPage || !website || !currentPage.sections) return;
-
-        setSaving(true);
-        console.log('Auto-saving...');
-
-        try {
-            // 1. Save Page Data (Content, Sections, Order)
-            // We strip out internal fields or pass exactly what the API expects
-            const sectionsToSave = currentPage.sections.map(s => ({
-                id: s.id,
-                type: s.type,
-                order: s.order,
-                visible: s.visible,
-                content: s.content,
-                style: s.style,
-            }));
-
-            const pageRes = await fetch(`/api/pages/${currentPage.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    sections: sectionsToSave,
-                    // We could also save title/slug if those were editable in the UI
-                }),
-            });
-
-            if (!pageRes.ok) throw new Error('Failed to save page');
-
-            // 2. Save Website Data (Theme, Meta)
-            // Only if we tracked website-level changes separately, but the store `hasUnsavedChanges` is global.
-            // For efficiency, we might want to check what actually changed, but for now we'll do a safe "upsert" style update 
-            // for the website properties if needed. 
-            // However, the `PUT /api/websites/[id]` is for settings. 
-            // The `updateTheme` action sets `hasUnsavedChanges`.
-            // Let's unconditionally save the theme config as well if it might have changed.
-
-            const websiteRes = await fetch(`/api/websites/${website.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    themeConfig: website.themeConfig,
-                    // name, metaData, etc. usually only changed in settings modal, relying on explicit save there?
-                    // actually the store tracks `updateWebsiteName`.
-                    name: website.name,
-                }),
-            });
-
-            if (!websiteRes.ok) throw new Error('Failed to save website settings');
-
-            console.log('Auto-save complete');
-        } catch (error) {
-            console.error('Auto-save failed:', error);
-            // Ideally set an error state in the store
-        } finally {
-            setSaving(false);
-            // We don't manually set hasUnsavedChanges(false) here because 
-            // the store might not expose a setter for it directly other than via actions.
-            // However, looking at the store definition, `setWebsite` sets it to false.
-            // But we don't want to reload the whole website and cause a flicker.
-            // We should ideally add a `markSaved()` action to the store. 
-            // For now, we'll assume the store needs an update or we leave it "dirty" until explicit save?
-            // No, auto-save should clear the dirty flag.
-            // Let's add `markAsSaved` to the store in the next step.
+    const save = useCallback(async () => {
+        if (inFlight.current) {
+            pending.current = true;
+            return;
         }
-    }, [currentPage, website, setSaving]);
+        const store = useEditorStore.getState();
+        const websiteId = store.website?.id;
+        const started = store.beginSave();
+        if (!websiteId || !started) return;
+
+        inFlight.current = true;
+        try {
+            const res = await fetch(`/api/websites/${websiteId}/draft`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(started.payload),
+            });
+
+            if (res.ok) {
+                const saved: { version: number } = await res.json();
+                useEditorStore.getState().saveSucceeded(saved.version, started.changeCounter);
+                retryDelay.current = MIN_RETRY_DELAY;
+            } else {
+                // 4xx (other than 409) won't succeed by retrying the same payload.
+                retryable.current = res.status >= 500;
+                if (!retryable.current) {
+                    console.error('Auto-save rejected:', res.status, await res.text());
+                }
+                useEditorStore.getState().saveFailed(res.status === 409);
+            }
+        } catch (err) {
+            console.error('Auto-save failed:', err);
+            retryable.current = true;
+            useEditorStore.getState().saveFailed(false);
+        } finally {
+            inFlight.current = false;
+            if (pending.current) {
+                pending.current = false;
+                void save();
+            }
+        }
+    }, []);
 
     useEffect(() => {
-        if (hasUnsavedChanges) {
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-            }
+        if (timer.current) clearTimeout(timer.current);
 
-            timeoutRef.current = setTimeout(() => {
-                saveChanges();
-            }, AUTO_SAVE_DELAY);
+        if (saveStatus === 'unsaved') {
+            retryable.current = true;
+            timer.current = setTimeout(save, AUTO_SAVE_DELAY);
+        } else if (saveStatus === 'error' && retryable.current) {
+            timer.current = setTimeout(save, retryDelay.current);
+            retryDelay.current = Math.min(retryDelay.current * 2, MAX_RETRY_DELAY);
         }
 
         return () => {
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
+            if (timer.current) clearTimeout(timer.current);
+        };
+    }, [changeCounter, saveStatus, save]);
+
+    // Flush pending edits when leaving the editor inside the app.
+    useEffect(() => {
+        return () => {
+            if (useEditorStore.getState().saveStatus === 'unsaved') void save();
+        };
+    }, [save]);
+
+    useEffect(() => {
+        const onBeforeUnload = (event: BeforeUnloadEvent) => {
+            if (useEditorStore.getState().saveStatus !== 'saved') {
+                event.preventDefault();
             }
         };
-    }, [hasUnsavedChanges, saveChanges]);
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    }, []);
 
     return null; // Headless component
 }

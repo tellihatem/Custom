@@ -16,8 +16,11 @@ import {
     Cloud,
     CloudOff,
     Loader2,
+    AlertTriangle,
+    RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { SaveStatus } from '@/lib/store/editorStore';
 
 export function EditorToolbar() {
     const {
@@ -27,20 +30,19 @@ export function EditorToolbar() {
         showSectionPanel,
         toggleStylePanel,
         toggleSectionPanel,
-        hasUnsavedChanges,
-        isSaving,
-        historyIndex,
-        history,
+        saveStatus,
+        past,
+        future,
         undo,
         redo,
     } = useEditorStore();
 
-    const canUndo = historyIndex > 0;
-    const canRedo = historyIndex < history.length - 1;
+    const canUndo = past.length > 0;
+    const canRedo = future.length > 0;
 
     const handleSave = async () => {
-        // Save logic here
-        console.log('Saving...');
+        // Publishing is implemented in Phase 5 (published snapshot + public route).
+        console.log('Publish not implemented yet');
     };
 
     return (
@@ -124,22 +126,7 @@ export function EditorToolbar() {
 
             {/* Save Status */}
             <div className="flex items-center gap-2 px-3">
-                {isSaving ? (
-                    <div className="flex items-center gap-2 text-slate-500 text-sm">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Saving...
-                    </div>
-                ) : hasUnsavedChanges ? (
-                    <div className="flex items-center gap-2 text-amber-600 text-sm">
-                        <CloudOff className="w-4 h-4" />
-                        Unsaved
-                    </div>
-                ) : (
-                    <div className="flex items-center gap-2 text-green-600 text-sm">
-                        <Cloud className="w-4 h-4" />
-                        Saved
-                    </div>
-                )}
+                <SaveIndicator status={saveStatus} />
             </div>
 
             <div className="h-6 w-px bg-slate-200 dark:bg-slate-700" />
@@ -161,4 +148,48 @@ export function EditorToolbar() {
             </div>
         </div>
     );
+}
+
+function SaveIndicator({ status }: { status: SaveStatus }) {
+    switch (status) {
+        case 'saving':
+            return (
+                <div className="flex items-center gap-2 text-slate-500 text-sm">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving...
+                </div>
+            );
+        case 'unsaved':
+            return (
+                <div className="flex items-center gap-2 text-amber-600 text-sm">
+                    <CloudOff className="w-4 h-4" />
+                    Unsaved
+                </div>
+            );
+        case 'error':
+            return (
+                <div className="flex items-center gap-2 text-red-600 text-sm" title="Your changes will be retried automatically">
+                    <AlertTriangle className="w-4 h-4" />
+                    Save failed
+                </div>
+            );
+        case 'conflict':
+            return (
+                <button
+                    onClick={() => window.location.reload()}
+                    className="flex items-center gap-2 text-red-600 text-sm hover:underline"
+                    title="This website was saved from another tab or device. Reload to continue editing (your unsaved changes here will be lost)."
+                >
+                    <RefreshCw className="w-4 h-4" />
+                    Changed elsewhere, reload
+                </button>
+            );
+        default:
+            return (
+                <div className="flex items-center gap-2 text-green-600 text-sm">
+                    <Cloud className="w-4 h-4" />
+                    Saved
+                </div>
+            );
+    }
 }
