@@ -7,10 +7,16 @@ import { notFound } from '../errors';
  * PUT /api/websites/:id/draft.
  */
 export async function updatePage(userId: string, id: string, input: UpdatePageInput) {
-    const { count } = await prisma.page.updateMany({
-        where: { id, website: { userId } },
-        data: input,
+    return prisma.$transaction(async (tx) => {
+        const page = await tx.page.findFirst({
+            where: { id, website: { userId } },
+            select: { websiteId: true },
+        });
+        if (!page) throw notFound('Page');
+
+        const updated = await tx.page.update({ where: { id }, data: input });
+        // Keep the editor's optimistic-concurrency version in sync.
+        await tx.website.update({ where: { id: page.websiteId }, data: { version: { increment: 1 } } });
+        return updated;
     });
-    if (count === 0) throw notFound('Page');
-    return prisma.page.findUniqueOrThrow({ where: { id } });
 }

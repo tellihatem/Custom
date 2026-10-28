@@ -177,7 +177,7 @@ function SaveIndicator({ status }: { status: SaveStatus }) {
             return (
                 <button
                     onClick={() => window.location.reload()}
-                    className="flex items-center gap-2 text-red-600 text-sm hover:underline"
+                    className="flex items-center gap-2 text-red-600 text-sm whitespace-nowrap hover:underline"
                     title="This website was saved from another tab or device. Reload to continue editing (your unsaved changes here will be lost)."
                 >
                     <RefreshCw className="w-4 h-4" />

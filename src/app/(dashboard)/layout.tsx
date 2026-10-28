@@ -27,6 +27,8 @@ export default function DashboardLayout({
     const pathname = usePathname();
     const router = useRouter();
     const [showUserMenu, setShowUserMenu] = useState(false);
+    const { data: session } = authClient.useSession();
+    const user = session?.user;
 
     const handleSignOut = async () => {
         await authClient.signOut();
@@ -98,11 +100,11 @@ export default function DashboardLayout({
                         className="flex items-center gap-3 w-full p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     >
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center text-white font-medium">
-                            U
+                            {user?.name?.charAt(0).toUpperCase() ?? ''}
                         </div>
-                        <div className="flex-1 text-left">
-                            <p className="text-sm font-medium truncate">User</p>
-                            <p className="text-xs text-slate-500 truncate">user@example.com</p>
+                        <div className="flex-1 min-w-0 text-left">
+                            <p className="text-sm font-medium truncate">{user?.name ?? '\u00a0'}</p>
+                            <p className="text-xs text-slate-500 truncate">{user?.email ?? '\u00a0'}</p>
                         </div>
                         <ChevronDown className={cn('w-4 h-4 text-slate-400 transition-transform', showUserMenu && 'rotate-180')} />
                     </button>
