@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { useEditorStore } from '@/lib/store/editorStore';
 import { EditorToolbar } from '@/components/editor/EditorToolbar';
@@ -12,8 +12,8 @@ import { Sparkles, ArrowLeft, Loader2 } from 'lucide-react';
 import type { Website } from '@/lib/types';
 
 export function EditorClient({ initialWebsite }: { initialWebsite: Website }) {
-    const [ready, setReady] = useState(false);
     const {
+        loadedFrom,
         website,
         currentPage,
         load,
@@ -24,11 +24,11 @@ export function EditorClient({ initialWebsite }: { initialWebsite: Website }) {
 
     useEffect(() => {
         load(initialWebsite);
-        setReady(true);
         return () => setEditing(false);
     }, [initialWebsite, load, setEditing]);
 
-    if (!ready || !website) {
+    // Until load() runs, the store may still hold a previously opened site.
+    if (loadedFrom !== initialWebsite || !website) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
                 <div className="text-center">

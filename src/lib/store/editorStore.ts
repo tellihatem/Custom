@@ -18,6 +18,8 @@ const HISTORY_COALESCE_MS = 1000;
 
 interface EditorStore {
     // Document
+    /** The server object passed to load(); lets the editor know it's hydrated. */
+    loadedFrom: Website | null;
     website: Website | null;
     currentPage: Page | null;
 
@@ -74,6 +76,7 @@ interface EditorStore {
 }
 
 const initialDocumentState = {
+    loadedFrom: null,
     website: null,
     currentPage: null,
     selectedSectionId: null,
@@ -166,6 +169,7 @@ export const useEditorStore = create<EditorStore>()(
                         set(
                             {
                                 ...initialDocumentState,
+                                loadedFrom: website,
                                 website,
                                 // The editor UI currently edits a single page.
                                 currentPage: website.pages?.[0] ?? null,
