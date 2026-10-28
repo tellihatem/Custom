@@ -80,6 +80,9 @@ model Website {
   templateId   String
   themeConfig  Json     @default("{}")
   metaData     Json     @default("{}")
+  // Optimistic-concurrency counter: bumped on every content change so a
+  // stale editor tab gets a 409 instead of silently overwriting.
+  version      Int      @default(0)
   isPublished  Boolean  @default(false)
   publishedUrl String?
   customDomain String?

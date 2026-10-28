@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma/client';
-import { requireAuth, jsonResponse, errorResponse } from '@/lib/api-helpers';
+import { withAuth, json } from '@/server/http';
+import { badRequest, HttpError } from '@/server/errors';
 import { storage } from '@/lib/storage';
 import { detectImageType, IMAGE_TYPES, MAX_UPLOAD_BYTES } from '@/lib/storage/image-type';
 
@@ -10,44 +10,41 @@ import { detectImageType, IMAGE_TYPES, MAX_UPLOAD_BYTES } from '@/lib/storage/im
  * Upload an image (multipart form field "file"). Returns the Asset record;
  * `publicUrl` is what gets stored in section content.
  */
-export async function POST(request: NextRequest) {
-    const { user, error } = await requireAuth();
-    if (error) return error;
-
+export const POST = withAuth(async (request, { user }) => {
     // Cheap early reject before buffering the body (allow for multipart overhead).
     const contentLength = Number(request.headers.get('content-length') ?? 0);
     if (contentLength > MAX_UPLOAD_BYTES + 64 * 1024) {
-        return errorResponse('File too large (max 10MB)', 413);
+        throw new HttpError(413, 'File too large (max 10MB)');
     }
 
     let form: FormData;
     try {
         form = await request.formData();
     } catch {
-        return errorResponse('Expected multipart form data');
+        throw badRequest('Expected multipart form data');
     }
 
     const file = form.get('file');
     if (!(file instanceof File)) {
-        return errorResponse('No file uploaded');
+        throw badRequest('No file uploaded');
     }
     if (file.size > MAX_UPLOAD_BYTES) {
-        return errorResponse('File too large (max 10MB)', 413);
+        throw new HttpError(413, 'File too large (max 10MB)');
     }
 
     const data = Buffer.from(await file.arrayBuffer());
     const ext = detectImageType(data);
     if (!ext) {
-        return errorResponse('Unsupported image type. Use PNG, JPEG, GIF or WebP.', 415);
+        throw new HttpError(415, 'Unsupported image type. Use PNG, JPEG, GIF or WebP.');
     }
 
-    const key = `${user!.id}/${randomUUID()}.${ext}`;
+    const key = `${user.id}/${randomUUID()}.${ext}`;
 
     try {
         await storage.put(key, data);
         const asset = await prisma.asset.create({
             data: {
-                userId: user!.id,
+                userId: user.id,
                 filename: file.name.slice(0, 255),
                 storagePath: key,
                 publicUrl: `/api/files/${key}`,
@@ -55,10 +52,9 @@ export async function POST(request: NextRequest) {
                 sizeBytes: data.length,
             },
         });
-        return jsonResponse(asset, 201);
+        return json(asset, 201);
     } catch (err) {
-        console.error('Error uploading asset:', err);
         await storage.delete(key).catch(() => {});
-        return errorResponse('Failed to upload file', 500);
+        throw err;
     }
-}
+});
