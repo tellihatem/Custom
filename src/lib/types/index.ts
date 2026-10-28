@@ -17,6 +17,8 @@ export interface Website {
     templateId: string;
     themeConfig: ThemeConfig;
     metaData: WebsiteMeta;
+    /** Optimistic-concurrency counter, sent back with every draft save. */
+    version: number;
     isPublished: boolean;
     publishedUrl?: string;
     customDomain?: string;
