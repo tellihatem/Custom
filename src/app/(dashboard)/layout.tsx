@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { authClient } from '@/lib/auth-client';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui';
 import {
@@ -29,8 +29,7 @@ export default function DashboardLayout({
     const [showUserMenu, setShowUserMenu] = useState(false);
 
     const handleSignOut = async () => {
-        const supabase = createClient();
-        await supabase.auth.signOut();
+        await authClient.signOut();
         router.push('/');
         router.refresh();
     };

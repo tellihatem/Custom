@@ -41,7 +41,7 @@ A powerful no-code website builder that allows users to create stunning portfoli
 - **Section Management** - Add, remove, reorder, and toggle visibility of sections
 - **Auto-save** - Changes are automatically saved as you edit
 - **Responsive Preview** - Preview your site on desktop, tablet, and mobile views
-- **User Authentication** - Secure login with email/password or OAuth (Google, GitHub) via Supabase
+- **User Authentication** - Email/password login, plus optional Google/GitHub OAuth, via Better Auth (self-hosted, no external service)
 - **Publishing** - Publish your portfolio and share it with the world
 
 ---
@@ -54,7 +54,7 @@ A powerful no-code website builder that allows users to create stunning portfoli
 - **UI Components**: Custom component library with Lucide icons
 - **State Management**: Zustand
 - **Database**: PostgreSQL with Prisma ORM
-- **Authentication**: Supabase Auth
+- **Authentication**: Better Auth (sessions stored in Postgres)
 - **Drag & Drop**: @dnd-kit/core and @dnd-kit/sortable
 - **Data Fetching**: TanStack React Query
 
@@ -68,7 +68,6 @@ src/
 │   ├── (auth)/             # Authentication pages (login, signup)
 │   ├── (dashboard)/        # Dashboard layout and pages
 │   ├── api/                # API routes
-│   ├── auth/               # Auth callback route
 │   └── editor/             # Website editor page
 ├── components/
 │   ├── auth/               # Authentication components
@@ -79,7 +78,7 @@ src/
 ├── lib/
 │   ├── prisma/             # Prisma client configuration
 │   ├── store/              # Zustand store (editor state)
-│   ├── supabase/           # Supabase client configuration
+│   ├── storage/            # Upload storage (local disk)
 │   ├── templates/          # Template configurations
 │   ├── types/              # TypeScript type definitions
 │   └── utils.ts            # Utility functions
@@ -95,11 +94,12 @@ src/
 The only thing you need installed is [Docker](https://docs.docker.com/get-docker/) with Compose v2.
 
 ```bash
-cp .env.example .env        # add your Supabase keys
 docker compose up -d --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000). This starts Postgres and applies the database migrations. Then the app starts.
+Open [http://localhost:3000](http://localhost:3000) and sign up. That's all. You don't need any accounts or API keys. This starts Postgres and applies the database migrations. Then the app starts. On first start the app also generates an auth secret. Uploaded images and the secret are kept in the `app-data` volume.
+
+To change ports, credentials, or enable Google/GitHub login, `cp .env.example .env` and edit it.
 
 Useful commands:
 
@@ -119,10 +119,10 @@ docker compose -f docker-compose.dev.yml up
 
 ### Option 2: Local Node.js
 
-Prerequisites: Node.js 20+, a PostgreSQL database, and a Supabase project (for authentication).
+Prerequisites: Node.js 20+ and a PostgreSQL database.
 
 ```bash
-cp .env.example .env        # set DATABASE_URL, DATABASE_SSL and Supabase keys
+cp .env.example .env        # set DATABASE_URL, DATABASE_SSL and BETTER_AUTH_SECRET
 npm install
 npx prisma generate
 npx prisma migrate deploy
@@ -139,8 +139,11 @@ See [`.env.example`](.env.example) for every variable and what it does.
 |----------|-------------|
 | `DATABASE_URL` | Postgres connection string (set automatically in Docker) |
 | `DATABASE_SSL` | `disable` (local/Docker), `require` (hosted, default), or `verify-full` |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (applied at build time) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (applied at build time) |
+| `BETTER_AUTH_SECRET` | Session signing secret, 32+ chars (auto-generated in Docker) |
+| `BETTER_AUTH_URL` | Public URL of the app; sign-ins from other origins are rejected |
+| `GOOGLE_CLIENT_ID` / `_SECRET` | Optional Google login |
+| `GITHUB_CLIENT_ID` / `_SECRET` | Optional GitHub login |
+| `UPLOAD_DIR` | Where uploaded images are stored (default `./data/uploads`) |
 
 A health endpoint at `GET /api/health` returns `200` when the app can reach the database.
 
@@ -203,6 +206,10 @@ The application uses the following main models:
 - `GET/PUT/DELETE /api/websites/[id]` - Manage individual websites
 - `GET/POST /api/pages` - Manage pages
 - `GET/PUT/DELETE /api/sections/[id]` - Manage sections
+- `POST /api/assets` - Upload an image (PNG, JPEG, GIF, WebP; max 10MB)
+- `GET /api/files/[...key]` - Serve an uploaded image
+- `/api/auth/*` - Better Auth endpoints (sign-up, sign-in, OAuth callbacks, sign-out)
+- `GET /api/health` - Health check
 
 ---
 

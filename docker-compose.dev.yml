@@ -35,6 +35,7 @@ services:
     environment:
       DATABASE_URL: *db-url
       DATABASE_SSL: disable
+      BETTER_AUTH_URL: http://localhost:3000
       WATCHPACK_POLLING: "true"
     volumes:
       - .:/app

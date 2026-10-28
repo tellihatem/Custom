@@ -5,7 +5,6 @@ import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { cn } from '@/lib/utils';
 import { Upload, X, Image as ImageIcon, Loader2 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 
 interface ImageUploaderProps {
     value?: string;
@@ -13,7 +12,6 @@ interface ImageUploaderProps {
     className?: string;
     aspectRatio?: 'square' | 'video' | 'wide' | 'portrait' | 'auto';
     placeholder?: string;
-    bucket?: string;
 }
 
 export function ImageUploader({
@@ -22,76 +20,36 @@ export function ImageUploader({
     className,
     aspectRatio = 'auto',
     placeholder = 'Drag & drop an image, or click to select',
-    bucket = 'uploads',
 }: ImageUploaderProps) {
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [error, setError] = useState<string | null>(null);
 
-    const uploadFile = async (file: File) => {
+    const uploadFile = useCallback(async (file: File) => {
         setIsUploading(true);
         setError(null);
         setUploadProgress(0);
 
         try {
-            const supabase = createClient();
-
-            // Generate unique filename
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-            const filePath = `uploads/${fileName}`;
-
-            // Simulate progress (Supabase doesn't provide upload progress)
-            const progressInterval = setInterval(() => {
-                setUploadProgress((prev) => Math.min(prev + 10, 90));
-            }, 100);
-
-            const { error: uploadError } = await supabase.storage
-                .from(bucket)
-                .upload(filePath, file, {
-                    cacheControl: '3600',
-                    upsert: false,
-                });
-
-            clearInterval(progressInterval);
-
-            if (uploadError) throw uploadError;
-
-            // Get public URL
-            const { data: { publicUrl } } = supabase.storage
-                .from(bucket)
-                .getPublicUrl(filePath);
-
-            setUploadProgress(100);
-            onChange(publicUrl);
+            const asset = await uploadAsset(file, setUploadProgress);
+            onChange(asset.publicUrl);
         } catch (err) {
             console.error('Upload error:', err);
-            setError('Failed to upload image. Please try again.');
+            setError(err instanceof Error ? err.message : 'Failed to upload image. Please try again.');
         } finally {
             setIsUploading(false);
         }
-    };
+    }, [onChange]);
 
     const onDrop = useCallback((acceptedFiles: File[]) => {
         const file = acceptedFiles[0];
-        if (file) {
-            // For demo purposes without Supabase configured, use local preview
-            if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    onChange(e.target?.result as string);
-                };
-                reader.readAsDataURL(file);
-            } else {
-                uploadFile(file);
-            }
-        }
-    }, [onChange]);
+        if (file) uploadFile(file);
+    }, [uploadFile]);
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop,
         accept: {
-            'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'],
+            'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp'],
         },
         maxSize: 10 * 1024 * 1024, // 10MB
         multiple: false,
@@ -188,4 +146,27 @@ export function ImageUploader({
             )}
         </div>
     );
+}
+
+/**
+ * POST the file to /api/assets. Uses XHR (not fetch) for upload progress.
+ */
+function uploadAsset(file: File, onProgress: (percent: number) => void) {
+    return new Promise<{ publicUrl: string }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/assets');
+        xhr.responseType = 'json';
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
+            else reject(new Error(xhr.response?.error ?? 'Failed to upload image. Please try again.'));
+        };
+        xhr.onerror = () => reject(new Error('Network error while uploading image.'));
+
+        const form = new FormData();
+        form.append('file', file);
+        xhr.send(form);
+    });
 }

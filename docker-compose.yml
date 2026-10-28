@@ -1,5 +1,5 @@
 # Production-like stack: Postgres + one-shot migrations + the app.
-#   cp .env.example .env && docker compose up -d --build
+#   docker compose up -d --build   (a .env file is optional)
 #   → http://localhost:3000
 
 x-db-url: &db-url postgresql://${POSTGRES_USER:-thodz}:${POSTGRES_PASSWORD:-thodz}@db:5432/${POSTGRES_DB:-thodz}
@@ -35,9 +35,6 @@ services:
     build:
       context: .
       target: runner
-      args:
-        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
     image: thodz-builder:latest
     restart: unless-stopped
     ports:
@@ -48,9 +45,13 @@ services:
     environment:
       DATABASE_URL: *db-url
       DATABASE_SSL: disable
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:${APP_PORT:-3000}}
+    volumes:
+      - app-data:/app/data
     depends_on:
       migrate:
         condition: service_completed_successfully
 
 volumes:
   db-data:
+  app-data:

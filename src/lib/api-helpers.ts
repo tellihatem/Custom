@@ -1,36 +1,13 @@
-import { createClient } from '@/lib/supabase/server';
+import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma/client';
+import { auth } from '@/lib/auth';
 
 /**
- * Get the authenticated user from Supabase session
- * Creates user in database if they don't exist
+ * Get the authenticated user from the Better Auth session cookie
  */
 export async function getAuthenticatedUser() {
-    const supabase = await createClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
-
-    if (error || !user) {
-        return null;
-    }
-
-    // Ensure user exists in database
-    let dbUser = await prisma.user.findUnique({
-        where: { id: user.id }
-    });
-
-    if (!dbUser) {
-        dbUser = await prisma.user.create({
-            data: {
-                id: user.id,
-                email: user.email!,
-                name: user.user_metadata?.full_name || user.email?.split('@')[0],
-                avatarUrl: user.user_metadata?.avatar_url,
-            }
-        });
-    }
-
-    return dbUser;
+    const session = await auth.api.getSession({ headers: await headers() });
+    return session?.user ?? null;
 }
 
 /**
